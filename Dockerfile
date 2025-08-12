@@ -17,7 +17,9 @@ RUN printf "%s\n" \
   "pydantic==2.8.2" \
   "requests==2.32.3" \
   "Pillow==10.4.0" \
+  "python-multipart" \
   > /app/backend/requirements.txt
+  
 
 RUN python -m pip install --upgrade pip && pip install -r /app/backend/requirements.txt
 
