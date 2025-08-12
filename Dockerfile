@@ -189,9 +189,11 @@ PY
 
 # -------- backend/services/images.py --------
 RUN cat <<'PY' > /app/backend/services/images.py
-import io, textwrap
+import os, io, textwrap, requests
 from PIL import Image, ImageDraw, ImageFont
 from .storage import IMAGES, save_bytes
+
+STABILITY_API_KEY = os.getenv("sk-F6aTWZOEMMXwSd0fhg8rNx9DMu1jyZURMwy7gSDLdssH2Mtw")
 
 def _stub_image(prompt: str, size=(1280, 720)) -> bytes:
     img = Image.new("RGB", size, (220, 220, 235))
@@ -206,10 +208,41 @@ def _stub_image(prompt: str, size=(1280, 720)) -> bytes:
     img.save(buf, format="PNG")
     return buf.getvalue()
 
+def _stability_text2img(prompt: str) -> bytes:
+    """
+    Uses Stability AI v2beta text-to-image endpoint (PNG bytes).
+    Docs may vary by account; if your plan uses a different route,
+    just tell me and I'll adjust the URL/params.
+    """
+    if not STABILITY_API_KEY:
+        raise RuntimeError("STABILITY_API_KEY not set")
+    url = "https://api.stability.ai/v2beta/stable-image/generate/core"
+    headers = {
+        "Authorization": f"Bearer {STABILITY_API_KEY}",
+        "Accept": "image/png",
+        "Content-Type": "application/json",
+    }
+    # 16:9 landscape to match our 1280x720 render
+    payload = {
+        "prompt": prompt,
+        "aspect_ratio": "16:9",
+        "output_format": "png"
+    }
+    r = requests.post(url, headers=headers, json=payload, timeout=120)
+    r.raise_for_status()
+    return r.content  # raw PNG bytes
+
 def generate_images(prompts):
     paths = []
     for p in prompts:
-        png = _stub_image(f"Cinematic rescue: {p}")
+        try:
+            if STABILITY_API_KEY:
+                png = _stability_text2img(p)
+            else:
+                png = _stub_image(f"Cinematic rescue: {p}")
+        except Exception:
+            # If the API errors for any reason, fall back per-image so the flow still works
+            png = _stub_image(f"Cinematic rescue: {p}")
         paths.append(save_bytes(png, IMAGES, ".png"))
     return paths
 PY
@@ -309,7 +342,6 @@ def render_slideshow(image_paths, audio_path, output_name="output.mp4"):
 PY
 
 # -------- backend/app.py --------
-# -------- backend/app.py --------
 RUN cat <<'PY' > /app/backend/app.py
 import os
 from pathlib import Path
@@ -392,7 +424,6 @@ def oneclick(topic: str = Form(...)):
     }
 PY
 
-# -------- frontend/index.html --------
 # -------- frontend/index.html --------
 RUN cat <<'HTML' > /app/frontend/index.html
 <!doctype html>
