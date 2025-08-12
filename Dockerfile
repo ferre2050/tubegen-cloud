@@ -309,11 +309,13 @@ def render_slideshow(image_paths, audio_path, output_name="output.mp4"):
 PY
 
 # -------- backend/app.py --------
+# -------- backend/app.py --------
 RUN cat <<'PY' > /app/backend/app.py
 import os
+from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.models.schemas import ScriptResponse, TTSRequest, TTSResponse, ImageGenRequest, ImageGenResponse, RenderRequest
@@ -328,7 +330,14 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8000"))
 
 app = FastAPI(title="TubeGen Cloud")
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+
+# Serve static frontend files at /assets (not at /)
+app.mount("/assets", StaticFiles(directory="frontend"), name="assets")
+
+# Serve index.html at /
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return Path("frontend/index.html").read_text(encoding="utf-8")
 
 app.add_middleware(
     CORSMiddleware,
@@ -384,6 +393,7 @@ def oneclick(topic: str = Form(...)):
 PY
 
 # -------- frontend/index.html --------
+# -------- frontend/index.html --------
 RUN cat <<'HTML' > /app/frontend/index.html
 <!doctype html>
 <html lang="en">
@@ -391,7 +401,7 @@ RUN cat <<'HTML' > /app/frontend/index.html
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>TubeGen Cloud — Rescue Stories</title>
-  <link rel="stylesheet" href="/styles.css"/>
+  <link rel="stylesheet" href="/assets/styles.css"/>
 </head>
 <body>
   <div class="container">
@@ -436,7 +446,7 @@ RUN cat <<'HTML' > /app/frontend/index.html
     </section>
   </div>
 
-  <script src="/app.js"></script>
+  <script src="/assets/app.js"></script>
 </body>
 </html>
 HTML
