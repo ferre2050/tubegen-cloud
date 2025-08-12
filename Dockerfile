@@ -7,6 +7,7 @@ WORKDIR /app
 
 # ========= backend structure =========
 RUN mkdir -p /app/backend/models /app/backend/services /app/backend/storage /app/frontend
+RUN touch /app/backend/__init__.py /app/backend/models/__init__.py /app/backend/services/__init__.py
 
 # -------- requirements --------
 RUN printf "%s\n" \
