@@ -187,13 +187,16 @@ def synthesize_tts(text: str, voice: str = None, speed: float = None):
         return {"audio_path": path}
 PY
 
-# -------- backend/services/images.py --------
-RUN cat <<'PY' > /app/backend/services/images.py
-import os, io, textwrap, requests
+# backend/services/images.py
+import os, io, textwrap, requests, sys
 from PIL import Image, ImageDraw, ImageFont
 from .storage import IMAGES, save_bytes
 
-STABILITY_API_KEY = os.getenv("sk-F6aTWZOEMMXwSd0fhg8rNx9DMu1jyZURMwy7gSDLdssH2Mtw")
+STABILITY_API_KEY = (os.getenv("STABILITY_API_KEY") or "").strip()
+FAL_KEY = (os.getenv("FAL_KEY") or "").strip()   # optional secondary provider
+
+def _log(msg: str):
+    print(f"[images] {msg}", file=sys.stdout, flush=True)
 
 def _stub_image(prompt: str, size=(1280, 720)) -> bytes:
     img = Image.new("RGB", size, (220, 220, 235))
@@ -204,16 +207,11 @@ def _stub_image(prompt: str, size=(1280, 720)) -> bytes:
     except Exception:
         font = None
     draw.multiline_text((40, 40), wrapped, fill=(20, 20, 20), font=font, spacing=4)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    b = io.BytesIO()
+    img.save(b, format="PNG")
+    return b.getvalue()
 
 def _stability_text2img(prompt: str) -> bytes:
-    """
-    Uses Stability AI v2beta text-to-image endpoint (PNG bytes).
-    Docs may vary by account; if your plan uses a different route,
-    just tell me and I'll adjust the URL/params.
-    """
     if not STABILITY_API_KEY:
         raise RuntimeError("STABILITY_API_KEY not set")
     url = "https://api.stability.ai/v2beta/stable-image/generate/core"
@@ -222,30 +220,81 @@ def _stability_text2img(prompt: str) -> bytes:
         "Accept": "image/png",
         "Content-Type": "application/json",
     }
-    # 16:9 landscape to match our 1280x720 render
     payload = {
         "prompt": prompt,
         "aspect_ratio": "16:9",
         "output_format": "png"
     }
     r = requests.post(url, headers=headers, json=payload, timeout=120)
-    r.raise_for_status()
-    return r.content  # raw PNG bytes
+    if not r.ok:
+        _log(f"Stability error {r.status_code}: {r.text[:300]}")
+        r.raise_for_status()
+    _log("Stability OK")
+    return r.content
+
+def _fal_text2img(prompt: str) -> bytes:
+    """
+    Fallback to FLUX via FAL API. Set FAL_KEY in Render.
+    Endpoint/shape may vary by account; this works for the common /fal-ai/flux/dev route.
+    """
+    if not FAL_KEY:
+        raise RuntimeError("FAL_KEY not set")
+    run_url = "https://api.fal.ai/v1/run/fal-ai/flux/dev"
+    headers = {
+        "Authorization": f"Key {FAL_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "input": {
+            "prompt": prompt,
+            "image_size": "widescreen",  # 16:9
+        }
+    }
+    r = requests.post(run_url, headers=headers, json=payload, timeout=120)
+    if not r.ok:
+        _log(f"FAL run error {r.status_code}: {r.text[:300]}")
+        r.raise_for_status()
+    data = r.json()
+    # Most responses include a list of images with URLs; fetch the first
+    img_url = None
+    if isinstance(data, dict):
+        # try a few common shapes
+        img_url = (
+            (data.get("images") or [{}])[0].get("url")
+            if "images" in data else
+            (data.get("output") or {}).get("image", {}).get("url")
+        )
+    if not img_url:
+        raise RuntimeError(f"FAL response missing image URL: {str(data)[:200]}")
+    g = requests.get(img_url, timeout=120)
+    if not g.ok:
+        _log(f"FAL image fetch error {g.status_code}: {g.text[:200]}")
+        g.raise_for_status()
+    _log("FAL OK")
+    return g.content
 
 def generate_images(prompts):
     paths = []
     for p in prompts:
-        try:
-            if STABILITY_API_KEY:
+        png = None
+        # 1) Try Stability
+        if STABILITY_API_KEY:
+            try:
                 png = _stability_text2img(p)
-            else:
-                png = _stub_image(f"Cinematic rescue: {p}")
-        except Exception:
-            # If the API errors for any reason, fall back per-image so the flow still works
+            except Exception as e:
+                _log(f"Stability failed for prompt [{p[:40]}...]: {e}")
+        # 2) Try FAL (if configured)
+        if png is None and FAL_KEY:
+            try:
+                png = _fal_text2img(p)
+            except Exception as e:
+                _log(f"FAL failed for prompt [{p[:40]}...]: {e}")
+        # 3) Fallback stub so the pipeline never breaks
+        if png is None:
             png = _stub_image(f"Cinematic rescue: {p}")
+            _log("Using stub image")
         paths.append(save_bytes(png, IMAGES, ".png"))
     return paths
-PY
 
 # -------- backend/services/thumbnail.py --------
 RUN cat <<'PY' > /app/backend/services/thumbnail.py
