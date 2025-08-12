@@ -314,13 +314,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from models.schemas import ScriptResponse, TTSRequest, TTSResponse, ImageGenRequest, ImageGenResponse, RenderRequest
-from services.llm import generate_script
-from services.tts import synthesize_tts
-from services.images import generate_images
-from services.thumbnail import make_thumbnail
-from services.render import render_slideshow
-from services.storage import abs_path
+from backend.models.schemas import ScriptResponse, TTSRequest, TTSResponse, ImageGenRequest, ImageGenResponse, RenderRequest
+from backend.services.llm import generate_script
+from backend.services.tts import synthesize_tts
+from backend.services.images import generate_images
+from backend.services.thumbnail import make_thumbnail
+from backend.services.render import render_slideshow
+from backend.services.storage import abs_path
 
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8000"))
