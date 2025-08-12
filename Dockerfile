@@ -347,7 +347,7 @@ import os
 from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.models.schemas import ScriptResponse, TTSRequest, TTSResponse, ImageGenRequest, ImageGenResponse, RenderRequest
@@ -375,6 +375,21 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+# ---------- NEW: health endpoint ----------
+@app.get("/health")
+def health():
+    import shutil, platform
+    return {
+        "status": "ok",
+        "python": platform.python_version(),
+        "has_elevenlabs": bool(os.getenv("ELEVENLABS_API_KEY")),
+        "voice_id": os.getenv("ELEVENLABS_VOICE_ID", ""),
+        "has_stability": bool(os.getenv("STABILITY_API_KEY")),
+        "ffmpeg": bool(shutil.which("ffmpeg")),
+        "storage_dir": str((Path(__file__).resolve().parent / "storage").resolve()),
+    }
+# -----------------------------------------
 
 @app.post("/generate-script", response_model=ScriptResponse)
 def gen_script(topic: str = Form(...)):
